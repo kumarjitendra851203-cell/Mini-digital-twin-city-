@@ -1,1 +1,44 @@
-
+<!doctype html><html><head><meta charset="utf-8"><title>Mini Digital Twin City</title>
+<style>
+body{margin:0;background:#0b1220;color:#dbe7ff;font:14px system-ui}header{padding:10px 16px;background:#101a30;display:flex;gap:12px;align-items:center}
+h1{font-size:16px;margin:0;color:#22d3ee}button,select,input{background:#16233f;color:#dbe7ff;border:1px solid #2b4170;border-radius:6px;padding:6px 10px;cursor:pointer}
+button:hover{background:#1f3562}.tab.on{background:#0ea5e9}main{display:flex;gap:12px;padding:12px;flex-wrap:wrap}.card{background:#101a30;border-radius:8px;padding:10px}
+.m{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;width:300px}.m div{background:#16233f;padding:6px;border-radius:6px}.m b{display:block;color:#22d3ee;font-size:16px}
+canvas{background:#0b1220;border-radius:8px}table{border-collapse:collapse}td,th{border-bottom:1px solid #2b4170;padding:4px 8px;text-align:right}#err{color:#f87171}.hide{display:none}
+</style></head><body>
+<header><h1>Mini Digital Twin City</h1><span id="eng">engine: native (SUMO not used)</span>
+<button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="lab">Experiment Lab</button><button class="tab" data-v="hist">Reports &amp; History</button><span id="err"></span></header>
+<main id="dash"><div class="card"><canvas id="c" width="560" height="560"></canvas><div>Legend: <span style="color:#22c55e">■ free</span> <span style="color:#eab308">■ moderate</span> <span style="color:#ef4444">■ heavy</span> <span style="color:#6b7280">■ closed</span> · click a road to close/open · wheel=zoom, drag=pan</div></div>
+<div class="card"><div><button onclick="act('start')">Start</button> <button onclick="act('pause')">Pause</button> <button onclick="act('resume')">Resume</button> <button onclick="act('step')">Step</button> <button onclick="act('reset')">Reset</button></div><p>
+Scenario <select id="sc" onchange="cfg({scenario:this.value})"><option>normal</option><option>rush_hour</option><option>high_congestion</option></select>
+Strategy <select id="st" onchange="cfg({strategy:this.value})"><option>fixed</option><option>adaptive</option></select><br><br>
+Speed <input id="sp" type="range" min="1" max="50" value="5" onchange="cfg({speed:this.value})"> Green(fixed) <input id="fg" type="number" value="10" min="3" max="60" style="width:55px" onchange="cfg({fixed_green:this.value})"> Rate <input id="rt" type="number" step="0.01" min="0" max="0.5" style="width:60px" onchange="cfg({rate:this.value})"></p>
+<div class="m" id="m"></div><p id="sel">Select an intersection (click a node).</p>
+<canvas id="ch" width="300" height="150"></canvas><div><a href="/api/exports/trips.csv" style="color:#22d3ee">trips.csv</a> · <a href="/api/exports/metrics.csv" style="color:#22d3ee">metrics.csv</a></div></div></main>
+<main id="lab" class="hide"><div class="card">Scenario <select id="es"><option>normal</option><option selected>rush_hour</option><option>high_congestion</option></select> Seed <input id="seed" type="number" value="1" style="width:60px"> Steps <input id="steps" type="number" value="600" style="width:70px"> <label><input type="checkbox" id="cl"> close road 3-4 at 25%</label> <button onclick="runExp()">Run Comparison</button><div id="res">No experiment run yet.</div></div></main>
+<main id="hist" class="hide"><div class="card"><a href="/api/exports/experiments.json" style="color:#22d3ee">experiments.json</a> · <a href="/api/exports/experiments.csv" style="color:#22d3ee">experiments.csv</a><div id="hl">Loading…</div></div></main>
+<script>
+const $=id=>document.getElementById(id),G=3,CELL=190,OFF=90;let S=null,z=1,px=0,py=0,sel=null;
+const P=n=>[OFF+(n%G)*CELL,OFF+Math.floor(n/G)*CELL];
+async function api(u,b){try{const r=await fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});const j=await r.json();$('err').textContent=r.ok?'':j.error;return r.ok?j:null}catch(e){$('err').textContent='server unreachable'}}
+const act=a=>api('/api/simulation/'+a,{}).then(poll);const cfg=o=>api('/api/config',o).then(poll);
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==t));['dash','lab','hist'].forEach(v=>$(v).classList.toggle('hide',v!=t.dataset.v));if(t.dataset.v=='hist')hist()});
+function col(l){return l<0?'#6b7280':l<.3?'#22c55e':l<.6?'#eab308':'#ef4444'}
+function draw(){const c=$('c').getContext('2d');c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,560,560);c.setTransform(z*.29,0,0,z*.29,px,py);if(!S)return;const sn=S.snapshot;
+for(const k in sn.load){const [a,b]=k.split('-').map(Number);if(a>b)continue;const l=Math.max(sn.load[k],sn.load[b+'-'+a]);const[p,q]=[P(a),P(b)];c.strokeStyle=col(sn.load[k]<0?-1:l);c.lineWidth=34;c.beginPath();c.moveTo(...p);c.lineTo(...q);c.stroke()}
+for(let n=0;n<9;n++){const[x,y]=P(n),s=sn.signals[n];c.fillStyle=s=='Y'?'#facc15':'#0b1220';c.strokeStyle=n==sel?'#22d3ee':'#dbe7ff';c.lineWidth=5;c.fillRect(x-22,y-22,44,44);c.strokeRect(x-22,y-22,44,44);c.fillStyle='#dbe7ff';c.font='28px sans-serif';c.fillText('J'+n,x-18,y-28);c.fillStyle='#22c55e';c.fillText(s=='NS'?'↕':s=='EW'?'↔':'■',x-10,y+10)}
+for(const v of sn.vehicles){const[p,q]=[P(v.e[0]),P(v.e[1])],f=v.p*.82+.09,o=v.e[0]<v.e[1]?8:-8,vert=Math.abs(v.e[0]-v.e[1])==G;const x=p[0]+(q[0]-p[0])*f+(vert?o:0),y=p[1]+(q[1]-p[1])*f+(vert?0:o);c.fillStyle=v.k=='bus'?'#fb923c':v.s?'#f87171':'#e0f2fe';c.fillRect(x-7,y-7,14,14)}}
+const cv=$('c');cv.onwheel=e=>{e.preventDefault();z=Math.min(4,Math.max(.5,z*(e.deltaY<0?1.1:.9)));draw()};let drag=null,moved=0;cv.onmousedown=e=>{drag=[e.clientX,e.clientY];moved=0};onmouseup=()=>drag=null;
+cv.onmousemove=e=>{if(drag){px+=e.clientX-drag[0];py+=e.clientY-drag[1];moved+=1;drag=[e.clientX,e.clientY];draw()}};
+cv.onclick=async e=>{if(moved>3)return;const r=cv.getBoundingClientRect(),k=.29*z,mx=(e.clientX-r.left-px)/k,my=(e.clientY-r.top-py)/k;
+for(let n=0;n<9;n++){const[x,y]=P(n);if(Math.abs(mx-x)<30&&Math.abs(my-y)<30){sel=n;const q=S.metrics.queues[n];$('sel').textContent=`J${n}: signal ${S.snapshot.signals[n]}, queue ${q}`;draw();return}}
+for(let a=0;a<9;a++)for(const b of[a+1,a+3]){if(b>8||(b==a+1&&a%3==2))continue;const[p,q]=[P(a),P(b)];if(mx>=Math.min(p[0],q[0])-25&&mx<=Math.max(p[0],q[0])+25&&my>=Math.min(p[1],q[1])-25&&my<=Math.max(p[1],q[1])+25){const closed=S.snapshot.closed.includes(a+'-'+b);const r=await api('/api/roads/'+(closed?'open':'close'),{a,b});if(r)$('sel').textContent=`Road ${a}-${b} ${closed?'reopened':'closed'}; rerouted ${r.rerouted}, removed unreachable ${r.removed_unreachable}`;poll();return}}};
+function chart(){const c=$('ch').getContext('2d');c.clearRect(0,0,300,150);const d=S.series;if(d.length<2){c.fillStyle='#8aa';c.fillText('chart fills as simulation runs',60,75);return}
+const line=(f,colr)=>{const mx=Math.max(1,...d.map(f));c.strokeStyle=colr;c.beginPath();d.forEach((m,i)=>{const x=i/(d.length-1)*290+5,y=140-f(m)/mx*130;i?c.lineTo(x,y):c.moveTo(x,y)});c.stroke()};line(m=>m.active,'#22d3ee');line(m=>m.avg_wait_completed,'#facc15');line(m=>m.throughput_interval,'#22c55e');c.fillStyle='#8aa';c.fillText('cyan=vehicles yellow=avg wait green=throughput',5,12)}
+async function poll(){const j=await api('/api/state');if(!j)return;S=j;const m=j.metrics,f=x=>(+x).toFixed(1);
+$('m').innerHTML=[['Time',m.t+'s'],['Active',m.active],['Generated',m.generated],['Completed',m.completed],['Avg wait (done)',f(m.avg_wait_completed)],['Avg travel',f(m.avg_travel_time)],['Avg speed',f(m.avg_speed)],['Stopped',m.stopped],['Total wait',m.total_wait],['Max queue',m.max_queue],['Stranded',m.stranded],['Signal switches',m.signal_switches]].map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');draw();chart()}
+async function runExp(){$('res').textContent='Running…';const j=await api('/api/experiments/run',{scenario:$('es').value,seed:+$('seed').value,steps:+$('steps').value,close:$('cl').checked?[3,4]:null});if(!j){$('res').textContent='failed';return}
+$('res').innerHTML='<table><tr><th>metric</th><th>fixed</th><th>adaptive</th><th>Δ</th><th>Δ%</th></tr>'+Object.entries(j.comparison).map(([k,v])=>`<tr><td>${k}</td><td>${v.fixed.toFixed(2)}</td><td>${v.adaptive.toFixed(2)}</td><td>${v.abs_change.toFixed(2)}</td><td>${v.pct_change==null?'n/a':v.pct_change.toFixed(1)+'%'}</td></tr>`).join('')+'</table><p>'+j.report+'</p>'}
+async function hist(){const j=await api('/api/experiments');$('hl').innerHTML=!j||!j.length?'No saved experiments yet.':j.map(e=>`<p>#${e.id} ${e.scenario} seed ${e.seed}: ${e.report}</p>`).join('')}
+poll();setInterval(poll,300);
+</script></body></html>
