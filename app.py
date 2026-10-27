@@ -1,5 +1,5 @@
 """Flask API for Mini Digital Twin City. Engine in sim/engine.py (native; SUMO not bundled)."""
-import io, json, sqlite3, threading, time
+import json, os, sqlite3, threading, time
 import pandas as pd
 from flask import Flask, jsonify, request, render_template, Response
 from sim.engine import Engine, SCENARIOS, N
@@ -188,5 +188,8 @@ def create_app(db="twin.db"):
     return app
 
 
+# Top-level instance: required by hosts such as Vercel, which look for `app` in app.py.
+app = create_app("/tmp/twin.db" if os.environ.get("VERCEL") else "twin.db")
+
 if __name__ == "__main__":
-    create_app().run(host="127.0.0.1", port=5000, threaded=True)
+    app.run(host="127.0.0.1", port=5000, threaded=True)
